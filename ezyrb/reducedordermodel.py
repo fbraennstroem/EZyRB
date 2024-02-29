@@ -8,6 +8,22 @@ from scipy.spatial.qhull import Delaunay
 from sklearn.model_selection import KFold
 from .database import Database
 
+# ==============================================================================
+# UoW adjustment
+def createDir(outputDir):
+    """
+    TODO: only for old included post-processing; needs removal
+    Function to make directory if not available
+    """
+    if not(os.path.isdir(outputDir)):
+        try:
+            os.makedirs(outputDir)
+        except OSError as e:
+            if e.errno != 17:
+                raise
+            pass
+# End UoW
+# ==============================================================================
 
 class ReducedOrderModel():
     """
@@ -57,6 +73,338 @@ class ReducedOrderModel():
             plugins = []
 
         self.plugins = plugins
+
+    # ==============================================================================
+    # Start UoW - adjustments
+
+    def test_error_norm(self, predicted_snapshot, test_snapshot, norm=np.linalg.norm):
+        """
+        Compute error norm for given single snapshot
+        """
+        return np.mean(
+            norm(predicted_snapshot - test_snapshot, axis=1) /
+            norm(test_snapshot, axis=1))
+
+    def test_error_local_db(self, test, norm=np.linalg.norm):
+        """
+        Compute the mean norm of the relative error vectors of predicted
+        test snapshots.
+
+        """
+        predicted_test = self.predict(test.parameters)
+
+        return np.mean(
+            norm(predicted_test - test.snapshots, axis=1) /
+            norm(test.snapshots, axis=1))
+
+    def errorUoW(self,new_db,idL, fieldName, meshData, n_splits, shuffleKFold, csvOutput, plotDiagrams, plotDiagramStep, debugLevel, outputFile, *args, norm=np.linalg.norm, **kwargs):
+        """
+        TODO: check if needed - Approximation / Reduction and Fitting of external kfold data
+        """
+        print(new_db)
+        rom = type(self)(new_db, copy.deepcopy(self.reduction), copy.deepcopy(self.approximation)).fit(*args, **kwargs)
+        print(self.database[test_index])
+        errorPerFold = rom.test_error(self.database[test_index], norm)
+        return np.array(errorPerFold)
+
+    def reduce_approximate_rom(self,trainDB, fieldName, meshData, n_splits, *args, norm=np.linalg.norm, **kwargs):
+        """
+        Already splitted dabase is reduced and approximated; kfolding is done separately in main script.
+        """
+        rom = type(self)(trainDB, copy.deepcopy(self.reduction),
+                         copy.deepcopy(self.approximation)).fit(
+                             *args, **kwargs)
+
+    def kfold_cv_errorUoW(self,idL, fieldName, meshData, n_splits, shuffleKFold, csvOutput, plotDiagrams, plotDiagramStep, debugLevel, outputFile, *args, norm=np.linalg.norm, **kwargs):
+        r"""
+        Includes also post-processing - but is actually not needed anymore - old non-flexible approach
+        """
+        error = []
+        if shuffleKFold:
+            kf = KFold(n_splits=n_splits,shuffle=True)
+        else:
+            kf = KFold(n_splits=n_splits,shuffle=False)
+        kfoldNr = 0
+        print (100*"-")
+
+        # ==============================================================================
+        for train_index, test_index in kf.split(self.database):
+            new_db = self.database[train_index]
+            parameterV = self.database[train_index].parameters
+            snapshotsV = self.database[train_index].snapshots
+            # print(parameterV)
+            # print(snapshotsV)
+            parameterTestV = self.database[test_index].parameters
+            print (100*"U")
+            print(parameterTestV)
+            # exit()
+            # new_db = Database(parameterV, snapshots)
+            # print(new_db)
+            # new_db= (new_db[:,1:])
+            # print(new_db)
+            # TODO remove first column with IDs
+            # print(self.reduction)
+            # print(dir(self.reduction))
+            # print(self.approximation)
+            # print(dir(self.approximation))
+            rom = type(self)(new_db, copy.deepcopy(self.reduction), copy.deepcopy(self.approximation)).fit(*args, **kwargs)
+            errorPerFold = rom.test_error(self.database[test_index], norm)
+            error.append(errorPerFold)
+            # print("test.parameters: ",self.database[test_index].parameters)
+
+            testData = self.database[test_index]
+            # print(testData.parameters)
+            # testData = (testData.parameters[:,1:])
+            # idNumberL = (testData.parameters[:,0])
+            # # print(idNumberL)
+            # exit()
+            # TODO remove first column with IDs
+
+            # print(testData.parameters)
+            # print(testData.snapshots)
+            # exit()
+            print (100*".")
+            print("kfoldNr: ",kfoldNr)
+            numberTrainingData = len(testData.parameters) * n_splits
+            print(" - total number of trainings data: ",numberTrainingData)
+            print(" - number of data per fold: ",len(testData.parameters))
+            print(" - avg. error per fold: ", np.round(errorPerFold,5))
+            # print((testData.parameters))
+            # print((testData.parameters.shape))
+
+            if plotDiagrams:
+                outDir1 = "./POST/"+fieldName +"/trainDataSize_" +str(numberTrainingData) +"__slices/"
+                createDir(outDir1)
+                outDir1a = "./POST/"+fieldName +"/trainDataSize_" +str(numberTrainingData) +"__slices/ROM/"
+                createDir(outDir1a)
+                outDir1b = "./POST/"+fieldName +"/trainDataSize_" +str(numberTrainingData) +"__slices/FOM/"
+                createDir(outDir1b)
+                outDir1c = "./POST/"+fieldName +"/trainDataSize_" +str(numberTrainingData) +"__slices/rel_DIFF/"
+                createDir(outDir1c)
+                outDir1d = "./POST/"+fieldName +"/trainDataSize_" +str(numberTrainingData) +"__slices/abs_DIFF/"
+                createDir(outDir1d)
+                outDir1e = "./POST/"+fieldName +"/trainDataSize_" +str(numberTrainingData) +"__slices/FOM_ROM/"
+                createDir(outDir1e)
+                # outDir1f = "./POST/"+fieldName +"/trainDataSize_" +str(numberTrainingData) +"__slices/rel_DIFF_range/"
+                # createDir(outDir1f)
+
+                outDir3 ="./POST/"+fieldName +"/trainDataSize_" +str(numberTrainingData)+"__histogram/"
+                createDir(outDir3)
+                # outDir4 ="./POST/"+fieldName +"/trainDataSize_idn_error_param_" +str(numberTrainingData)+"__csv/"
+                # createDir(outDir4)
+                # outputfile.write("fieldName,idn, numberTraining, error,param1, param2, param3, param4\n")
+
+            if csvOutput:
+                outDir2 ="./POST/"+fieldName +"/trainDataSize_" +str(numberTrainingData)+"__csv/"
+                createDir(outDir2)
+
+            if fieldName == "TEMPERATURE":
+                unit = " (C)"
+            elif fieldName == "W-VELOCITY":
+                unit = " (m/s)"
+            elif fieldName == "HRRPUV":
+                unit = " (kW/m3)"
+            else:
+                unit = " (-)"
+
+            for n, param in enumerate(testData.parameters):
+                if debugLevel == 1:
+                    # print ("idNumber: ", idShuffeldL[n])
+                    print (100*"x")
+                    print ("n (parameter number): ", n)
+                    print("Parameter for testing: ", param)
+                # exit()
+                predicted_test = rom.predict(param)
+                # print(predicted_test)
+                # print (100*"-")
+                # print ("Prediction: ", predicted_test.shape)
+                # print ("snapshot n: ", testData.snapshots.shape)
+                # print ("snapshot n: ", testData.snapshots[n].shape)
+                abs_diff = predicted_test - testData.snapshots[n]
+                # print("abs_diff: ", abs_diff.shape)
+                if min(testData.snapshots[n]) == 0.0:
+                    rel_diff = (predicted_test - testData.snapshots[n]) / (testData.snapshots[n] + 0.00000000001)
+                else:
+                    rel_diff = (predicted_test - testData.snapshots[n]) / testData.snapshots[n]
+                idn = str(random.randint(1, 100000)) 
+
+                # print(norm(predicted_test - testData.snapshots, axis=1))
+                # print(norm(testData.snapshots, axis=1))
+                # print(norm(predicted_test - testData.snapshots, axis=1).shape)
+                # print(norm(testData.snapshots, axis=1).shape)
+                # norm_diff = norm(predicted_test - testData.snapshots, axis=1) / norm(testData.snapshots, axis=1)
+                norm_diff = norm(predicted_test - testData.snapshots, axis=1) / norm(testData.snapshots, axis=1)
+                # print("Normdiff: ", norm_diff.shape)
+
+                norm_diff_mean = np.mean(norm(predicted_test - testData.snapshots, axis=1) / norm(testData.snapshots, axis=1))
+
+                # ==============================================================================
+                # CSV
+                if csvOutput:
+                    np.savetxt(outDir2 + fieldName + "_" + idn +"__nrTest_"+str(numberTrainingData) +"_"+str(kfoldNr) +"_nSplits_"+str(n_splits) +"_"+ '_abs_DIFF.csv', abs_diff, delimiter=',')
+                    np.savetxt(outDir2 + fieldName + "_" + idn +"__nrTest_"+str(numberTrainingData) +"_"+str(kfoldNr)+"_nSplits_"+str(n_splits) +"__"+ '_rel_DIFF.csv', rel_diff, delimiter=',')
+
+                if plotDiagrams:
+                    if n % plotDiagramStep == 0:
+                        # ==============================================================================
+                        MeshSize_x = 20
+                        MeshSize_y = 45
+
+                        # ..............................................................................
+                        matrix_rom = predicted_test
+                        matrix_rom = matrix_rom.reshape((MeshSize_x+1),(MeshSize_y+1))
+                        matrix_rom = np.rot90(matrix_rom, 1)
+
+                        plt.figure(figsize=(4.2,6))
+                        plt.imshow(matrix_rom, cmap='viridis')#, vmin=, vmax=max_Range_of_colorbar)
+                        plt.colorbar(label=fieldName+unit)
+                        filename = outDir1a + fieldName+"_"+idn +"__nrTest_"+str(numberTrainingData) +"__kfold_"+str(kfoldNr) +"__nSplits_"+str(n_splits) + '__ROM.png'
+                        plt.xlabel("x-Position (m)")
+                        plt.ylabel("z-Position (m)")
+                        plt.title(param)
+                        plt.savefig(filename)
+                        plt.close()
+
+                        # ..............................................................................
+                        matrix = testData.snapshots[n]
+                        matrix = matrix.reshape((MeshSize_x+1),(MeshSize_y+1))
+                        matrix = np.rot90(matrix, 1)
+                        # print(matrix.max())
+                        # print(matrix.min())
+
+                        plt.figure(figsize=(4.2,6))
+                        plt.imshow(matrix, cmap='viridis')#, vmin=, vmax=max_Range_of_colorbar)
+                        plt.colorbar(label=fieldName+unit)
+                        filename = outDir1b + fieldName +"_"+idn+"__nrTest_"+str(numberTrainingData) +"__kfold_"+str(kfoldNr) +"__nSplits_"+str(n_splits) + '__FOM.png'
+                        plt.xlabel("x-Position (m)")
+                        plt.ylabel("z-Position (m)")
+                        plt.title(param)
+                        plt.savefig(filename)
+                        plt.close()
+
+                        # ..............................................................................
+                        # fig = plt.figure(layout='constrained', figsize=(10, 4))
+                        # subfigs = fig.subfigures(1, 2, wspace=0.07)
+                        # plt.figure(figsize=(4.2,6))
+                        # fig, (ax1, ax2) = plt.subplots(1, 2)
+                        fig, axs = plt.subplots(1, 2)
+                        # fig.suptitle(param)
+                        fig.suptitle("L2-norm: "+ str(np.round(norm_diff_mean,5)))#+" \n Parameters: " + str(param))
+                        # axs[1] = plt.imshow(matrix_rom, cmap='viridis')#, vmin=, vmax=max_Range_of_colorbar)
+                        # axs[0] = plt.imshow(matrix, cmap='viridis')#, vmin=, vmax=max_Range_of_colorbar)
+                        axs[0].set_title('FOM')
+                        if debugLevel == 2:
+                            print("-- debugLevel 2 --------------------------------")
+                            print ("  - FOM max range: ", matrix.max()) 
+                            print ("  - FOM min range: ", matrix.min()) 
+                            print ("  - ROM max range: ", matrix_rom.max()) 
+                            print ("  - ROM min range: ", matrix_rom.min()) 
+                        # max_Range_of_colorbar = 1200.0
+                        max_Range_of_colorbar = matrix.max()
+                        min_Range_of_colorbar = matrix.min()
+                        im1= axs[0].imshow(matrix, cmap='viridis', vmin=min_Range_of_colorbar, vmax=max_Range_of_colorbar)
+                        axs[1].set_title('ROM')
+                        im2 = axs[1].imshow(matrix_rom, cmap='viridis', vmin=min_Range_of_colorbar, vmax=max_Range_of_colorbar)
+                        # plt.colorbar(label=fieldName+unit)
+                         # cbar3 = plt.colorbar(im3, cax=cax3, ticks=MultipleLocator(0.2), format="%.2f")
+                        fig.colorbar(im2, orientation='vertical', label=fieldName+unit)
+
+                        filename = outDir1e + fieldName +"_"+idn+"__nrTest_"+str(numberTrainingData) +"__kfold_"+str(kfoldNr) +"__nSplits_"+str(n_splits) + '__FOM_ROM.png'
+                        plt.xlabel("x-Position (m)")
+                        plt.ylabel("z-Position (m)")
+                        # plt.title(param)
+                        plt.savefig(filename)
+                        plt.close()
+
+                        # # ..............................................................................
+                        matrix = rel_diff
+                        matrix = matrix.reshape((MeshSize_x+1),(MeshSize_y+1))
+                        matrix = np.rot90(matrix, 1)
+
+                        # plt.figure(figsize=(4.2,6))
+                        fig, axs = plt.subplots(1, 2)
+                        # fig.suptitle(param)
+                        fig.suptitle("L2-norm: "+ str(np.round(norm_diff_mean,5)))#+" \n Parameters: " + str(param))
+                        axs[0].set_title('no range')
+                        axs[1].set_title('-0.15 to 0.15')
+                        im1 = axs[0].imshow(matrix, cmap='viridis')#, vmin=, vmax=max_Range_of_colorbar)
+                        im2 = axs[1].imshow(matrix, cmap='viridis', vmin=-0.15, vmax=0.15)
+                        # plt.colorbar(label=fieldName+unit)
+                        fig.colorbar(im1, orientation='vertical')
+                        fig.colorbar(im2, orientation='vertical', label=fieldName+unit)
+                        filename = outDir1c + fieldName +  "_"+ idn + "_l2_"+ str(np.round(norm_diff_mean,4)) + "__nrTest_"+str(numberTrainingData) +"__kfold_"+str(kfoldNr) +"__nSplits_"+str(n_splits) + '_rel_DIFF.png'
+                        # plt.title("L2-norm: "+ str(np.round(norm_diff_mean,5)))
+                        # plt.xlabel("x-Position (m)")
+                        # plt.ylabel("z-Position (m)")
+                        # plt.title(param)
+                        plt.savefig(filename)
+                        plt.close()
+
+                        # ..............................................................................
+                        # matrix = norm_diff
+                        # matrix = matrix.reshape((MeshSize_x+1),(MeshSize_y+1))
+                        # matrix = np.rot90(matrix, 1)
+                        # plt.imshow(matrix, cmap='viridis')#, vmin=, vmax=max_Range_of_colorbar)
+                        # plt.colorbar(label='Temperature (C)')
+                        # filename = fieldName +"_"+str(kfoldNr) +"_nSplits_"+str(n_splits) +"_"+ idn + '_normDiff_diff_HIST_pred_sol__DIFF_normDiff_SLICE.png'
+                        # plt.title("L2-norm: ", norm_diff_mean)
+                        # plt.savefig(filename)
+                        # plt.close()
+
+                        # ..............................................................................
+                        matrix = abs_diff
+                        matrix = matrix.reshape((MeshSize_x+1),(MeshSize_y+1))
+                        matrix = np.rot90(matrix, 1)
+
+                        plt.figure(figsize=(4.2,6))
+                        plt.imshow(matrix, cmap='viridis')#, vmin=, vmax=max_Range_of_colorbar)
+                        plt.colorbar(label=fieldName+unit)
+                        plt.xlabel("x-Position (m)")
+                        plt.ylabel("z-Position (m)")
+                        plt.title("L2-norm: "+ str(np.round(norm_diff_mean,5))+" "+str(param))
+                        filename = outDir1d + fieldName +"_"+idn+ "_l2_"+ str(np.round(norm_diff_mean,4)) +"__nrTest_"+str(numberTrainingData) +"__kfold_"+str(kfoldNr) +"__nSplits_"+str(n_splits) + '_abs_DIFF.png'
+                        plt.savefig(filename)
+                        plt.close()
+
+
+                        # ==============================================================================
+                        n_bins = 100
+                        plt.hist(rel_diff, n_bins, histtype='step', stacked=True, fill=False)
+                        plt.xlabel("L2-norm")
+                        plt.xlabel("Relative Error (%)")
+                        # plt.ylabel("(m)")
+                        plt.title(param)
+                        plt.savefig(outDir3 + fieldName +"_"+ idn +"__nrTest_"+str(numberTrainingData) +"__kfold_"+str(kfoldNr) +"_nSplits_"+str(n_splits) +"__rel_DIFF.png")
+                        plt.close()
+
+                        # plt.hist(rel_diff, n_bins, histtype='step', stacked=True, fill=False)
+                        # plt.xlabel("L2-norm")
+                        # plt.xlabel("x-Position (m)")
+                        # plt.ylabel("z-Position (m)")
+                        # plt.savefig(outDir3 + fieldName +"__nrTrain_"+str(numberTrainingData) +"__kfold_"+str(kfoldNr) +"_nSplits_"+str(n_splits) +"_"+ idn + '_rel_DIFF.png')
+                        # outputFile.write("%s, %s, %d, %s, %.4f,  %.4f,  %.4f,  %.4f\n" % (fieldName,idn, numberTrainingData, str(np.round(norm_diff_mean,5)) ,param[0], param[1], param[2], param[3]))
+                        paramStrL = []
+                        for par in param:
+                            # print(par)
+                            paramStrL.append(str(par))
+                        paramStr = ",".join(paramStrL)
+                        # print(paramStr)
+                        # outputFile.write("%s, %s, %d, %s, %s\n" % (fieldName,idn, numberTrainingData, str(np.round(norm_diff_mean,5)) ,paramStrL))
+                        outputFile.write("%s,%s,%d,%s,%s\n" % (fieldName,idn, numberTrainingData, str(np.round(norm_diff_mean,5)) ,paramStr))
+                        # exit()
+                        # outputFile.write("%s, %s, %d, %s, %.4f,  %.4f,  %.4f,  %.4f\n" % (fieldName,idn, numberTrainingData, str(np.round(norm_diff_mean,5)) ,param[0], param[1], param[2], param[3]))
+                        # plt.close()
+                        # exit()
+            kfoldNr = kfoldNr + 1
+
+            # for each_set in test_data
+            # error = [1.0,2.0]
+
+        return np.array(error)
+
+
+    # End UoW
+    # ==============================================================================
 
     def fit(self):
         r"""
@@ -185,6 +533,7 @@ class ReducedOrderModel():
         return np.mean(
             norm(predicted_test.snapshots_matrix - test.snapshots_matrix,
             axis=1) / norm(test.snapshots_matrix, axis=1))
+
 
     def kfold_cv_error(self, n_splits, *args, norm=np.linalg.norm, **kwargs):
         r"""
